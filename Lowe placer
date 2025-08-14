@@ -1,0 +1,81 @@
+--[[ Made by 3itx ]]--
+getgenv().SelfDestruct = true
+
+local PetTarget = "Moon Cat"
+local AwaitAbilityOffset = 1.5
+local Data = require(game:GetService("ReplicatedStorage").Modules.DataService)
+
+local PetFunctions = {}
+local petZoneState = {}
+
+PetFunctions.ReturnUUIDEquipedPets = function()
+    local ok, data = pcall(function() return Data:GetData() end)
+    local equipped = (ok and type(data) == "table" and data.PetsData and data.PetsData.EquippedPets) or {}
+    if type(equipped) ~= "table" then equipped = {} end
+
+    local uuids = {}
+    for _, v in ipairs(equipped) do
+        table.insert(uuids, tostring(v))
+    end
+    return uuids
+end
+
+PetFunctions.IdentifyThatGayGuyPets = function()
+    local equippedUUIDs = PetFunctions.ReturnUUIDEquipedPets()
+    local foundPets = {}
+
+    for _, pet in pairs(workspace.PetsPhysical:GetChildren()) do
+        if pet:IsA("BasePart") and pet:GetAttribute("UUID") then
+            local petUUID = tostring(pet:GetAttribute("UUID"))
+            if table.find(equippedUUIDs, petUUID) then
+                for _, child in ipairs(pet:GetChildren()) do
+                    if child:IsA("Model") and child:GetAttribute("CurrentSkin") == PetTarget then
+                        table.insert(foundPets, {UUID = petUUID, PetInstance = pet})
+                    end
+                end
+            end
+        end
+    end
+    return foundPets
+end
+
+PetFunctions.EquipPet = function(uuid)
+    game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("PetsService")
+        :FireServer("EquipPet", uuid, game:GetService("Players").LocalPlayer.Character:GetPivot())
+end
+
+PetFunctions.UnequipPet = function(uuid)
+    game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("PetsService")
+        :FireServer("UnequipPet", uuid)
+end
+
+while getgenv().SelfDestruct do
+    local moonCats = PetFunctions.IdentifyThatGayGuyPets()
+
+    for _, petData in ipairs(moonCats) do
+        local petPart = petData.PetInstance
+        local uuid = petData.UUID
+        local zoneFound = false
+
+        for _, model in ipairs(petPart:GetChildren()) do
+            if model:IsA("Model") and model:GetAttribute("CurrentSkin") == PetTarget then
+                local zone = model:FindFirstChild("Zone")
+                if zone and zone:IsA("BasePart") then
+                    zoneFound = true
+                end
+            end
+        end
+
+        if zoneFound and not petZoneState[uuid] then
+            petZoneState[uuid] = true
+            task.wait(AwaitAbilityOffset)
+            PetFunctions.UnequipPet(uuid)
+            task.wait(0.2)
+            PetFunctions.EquipPet(uuid)
+        elseif not zoneFound then
+            petZoneState[uuid] = false
+        end
+    end
+
+    task.wait(0.5)
+end
