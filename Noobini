@@ -1,0 +1,120 @@
+getgenv().ToggleScript = true
+
+local MAX_MOON_CATS_TO_PLACE = 7
+local PET_NAME_TO_FIND = 'Moon Cat'
+local UNEQUIP_COOLDOWN_DELAY = 1.5
+local COOLDOWN_CHECK_INTERVAL = 1
+
+local Players = game:GetService('Players')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local LocalPlayer = Players.LocalPlayer
+
+local GameEvents = ReplicatedStorage:WaitForChild('GameEvents')
+local PetsService = GameEvents:WaitForChild('PetsService')
+local PetCooldownsUpdated = GameEvents:WaitForChild('PetCooldownsUpdated')
+
+local placedPets = {}
+local lastCooldownPrintTime = 0
+
+local function unequipPet(uuid)
+    pcall(function()
+        PetsService:FireServer('UnequipPet', uuid)
+        placedPets[uuid] = nil
+        task.wait(UNEQUIP_COOLDOWN_DELAY)
+    end)
+end
+
+local function getPetCooldown(pet)
+    if not pet then return 0 end
+    local cooldowns = pet:GetAttribute("Cooldowns")
+    if type(cooldowns) ~= "table" then return 0 end
+    
+    for _, cd in pairs(cooldowns) do
+        if cd.Passive and type(cd.Time) == "number" then
+            return cd.Time
+        end
+    end
+    return 0
+end
+
+PetCooldownsUpdated.OnClientEvent:Connect(function(petUUID, cooldownData)
+    if placedPets[petUUID] then
+        if type(cooldownData) == "table" then
+            for _, entry in pairs(cooldownData) do
+                if entry.Passive and type(entry.Time) == "number" then
+                    placedPets[petUUID] = {
+                        cooldownEnd = os.time() + entry.Time,
+                        lastChecked = os.time()
+                    }
+                    break
+                end
+            end
+        end
+    end
+end)
+
+while getgenv().ToggleScript do
+    task.wait(COOLDOWN_CHECK_INTERVAL)
+    
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        task.wait(2)
+        continue
+    end
+
+    local currentTime = os.time()
+    
+    for uuid, data in pairs(placedPets) do
+        if type(data) == "table" and data.cooldownEnd and currentTime >= data.cooldownEnd then
+            unequipPet(uuid)
+        end
+    end
+
+    if currentTime >= lastCooldownPrintTime + 5 then
+        print("--- Moon Cat Durumu ---")
+        local active = 0
+        local sleeping = 0
+        
+        for uuid, data in pairs(placedPets) do
+            if type(data) == "table" then
+                if data.cooldownEnd and currentTime < data.cooldownEnd then
+                    sleeping = sleeping + 1
+                    print(string.format("  %s: Uyuyor (%ds kaldÄ±)", 
+                        string.sub(uuid, 1, 8),
+                        data.cooldownEnd - currentTime
+                    ))
+                else
+                    active = active + 1
+                    print("  "..string.sub(uuid, 1, 8)..": Aktif")
+                end
+            end
+        end
+        
+        print(string.format("Toplam: %d/%d (Uyuyan: %d)", 
+            active + sleeping,
+            MAX_MOON_CATS_TO_PLACE,
+            sleeping
+        ))
+        lastCooldownPrintTime = currentTime
+    end
+
+    if table.size(placedPets) < MAX_MOON_CATS_TO_PLACE then
+        for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
+            if item.Name == PET_NAME_TO_FIND then
+                local petUUID = item:GetAttribute("PET_UUID")
+                if petUUID and not placedPets[petUUID] then
+                    pcall(function()
+                        PetsService:FireServer("EquipPet", petUUID, character.HumanoidRootPart.CFrame)
+                        placedPets[petUUID] = {
+                            cooldownEnd = nil,
+                            lastChecked = currentTime
+                        }
+                    end)
+                    
+                    if table.size(placedPets) >= MAX_MOON_CATS_TO_PLACE then
+                        break
+                    end
+                end
+            end
+        end
+    end
