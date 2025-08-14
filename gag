@@ -1,4 +1,4 @@
-getgenv().ToggleScript = false -- Set to false to disable the script
+getgenv().ToggleScript = True -- Set to false to disable the script
 
 local MAX_MOON_CATS_TO_PLACE = 7
 local PET_NAME_TO_FIND = 'Moon Cat'
