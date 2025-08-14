@@ -1,0 +1,150 @@
+getgenv().ToggleScript = true -- Set to false to disable the script
+
+local MAX_MOON_CATS_TO_PLACE = 7
+local PET_NAME_TO_FIND = 'Moon Cat'
+local UNEQUIP_COOLDOWN_DELAY = 1.3
+
+local Players = game:GetService('Players')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local LocalPlayer = Players.LocalPlayer
+
+local GameEvents = ReplicatedStorage:WaitForChild('GameEvents')
+local PetsService = GameEvents:WaitForChild('PetsService')
+local PetCooldownsUpdated = GameEvents:WaitForChild('PetCooldownsUpdated')
+
+local placedPets = {}
+local lastCooldownPrintTime = 0
+
+local function unequipPet(uuid)
+    PetsService:FireServer('UnequipPet', uuid)
+    placedPets[uuid] = nil
+end
+
+PetCooldownsUpdated.OnClientEvent:Connect(function(petUUID, cooldownData)
+    if placedPets[petUUID] then
+        if typeof(cooldownData) == 'table' then
+            for _, entry in pairs(cooldownData) do
+                if entry.Passive and entry.Time then
+                    local cooldownEndTime = os.time()
+                        + entry.Time
+                        + UNEQUIP_COOLDOWN_DELAY
+                    placedPets[petUUID] = cooldownEndTime
+                    break
+                end
+            end
+        end
+    end
+end)
+
+while true do
+    task.wait(1)
+
+    if getgenv().ToggleScript then
+        local character = LocalPlayer.Character
+        if not character or not character:FindFirstChild('HumanoidRootPart') then
+            warn('Waiting for player character to load...')
+            continue
+        end
+
+        local humanoidRootPart = character.HumanoidRootPart
+        local currentTime = os.time()
+        local unequippedBatchThisCycle = false
+
+        local placedCount = 0
+        for _ in pairs(placedPets) do
+            placedCount = placedCount + 1
+        end
+
+        if placedCount == MAX_MOON_CATS_TO_PLACE then
+            local allPetsReady = true
+            for uuid, cooldownEndTime in pairs(placedPets) do
+                if
+                    typeof(cooldownEndTime) ~= 'number'
+                    or currentTime < cooldownEndTime
+                then
+                    allPetsReady = false
+                    break
+                end
+            end
+
+            if allPetsReady then
+                for uuid in pairs(placedPets) do
+                    unequipPet(uuid)
+                end
+                unequippedBatchThisCycle = true
+            end
+        end
+
+        if unequippedBatchThisCycle then
+            continue
+        end
+
+        if currentTime >= lastCooldownPrintTime + 5 then
+            print('--- Moon Cat Status Update ---')
+            local activeCooldowns = 0
+            for uuid, cooldownEndTime in pairs(placedPets) do
+                if typeof(cooldownEndTime) == 'number' then
+                    local timeLeft = math.max(0, cooldownEndTime - currentTime)
+                    print(
+                        '  - Pet ['
+                            .. string.sub(uuid, 1, 8)
+                            .. '] | Time Left: '
+                            .. timeLeft
+                            .. 's'
+                    )
+                    activeCooldowns = activeCooldowns + 1
+                elseif cooldownEndTime == 'pending' then
+                    print(
+                        '  - Pet ['
+                            .. string.sub(uuid, 1, 8)
+                            .. '] | Awaiting cooldown data...'
+                    )
+                    activeCooldowns = activeCooldowns + 1
+                end
+            end
+
+            if activeCooldowns == 0 then
+                print('  Status: Searching for pets to place.')
+            elseif activeCooldowns < MAX_MOON_CATS_TO_PLACE then
+                print(
+                    '  Status: Placing pets ('
+                        .. activeCooldowns
+                        .. '/'
+                        .. MAX_MOON_CATS_TO_PLACE
+                        .. ')'
+                )
+            else
+                print('  Status: All pets placed. Waiting for cooldowns to finish.')
+            end
+            lastCooldownPrintTime = currentTime
+        end
+
+        if placedCount < MAX_MOON_CATS_TO_PLACE then
+            local petsFoundInBackpack = {}
+            for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
+                if string.match(item.Name, PET_NAME_TO_FIND) then
+                    local petUUID = item:GetAttribute('PET_UUID')
+                    if petUUID and not placedPets[petUUID] then
+                        table.insert(petsFoundInBackpack, petUUID)
+                    end
+                end
+            end
+
+            if #petsFoundInBackpack > 0 then
+                local petsToPlaceCount = math.min(
+                    MAX_MOON_CATS_TO_PLACE - placedCount,
+                    #petsFoundInBackpack
+                )
+                for i = 1, petsToPlaceCount do
+                    local uuidToPlace = petsFoundInBackpack[i]
+                    PetsService:FireServer(
+                        'EquipPet',
+                        uuidToPlace,
+                        humanoidRootPart.CFrame
+                    )
+                    placedPets[uuidToPlace] = 'pending'
+                end
+            end
+        end
+    end
+end
