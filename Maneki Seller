@@ -1,0 +1,35 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
+
+local Character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+task.spawn(function()
+    while true do
+        for x,v in Players.LocalPlayer.Backpack:GetChildren() do
+            if v:IsA("Tool") and (v.Name:find("Kodama") or v.Name:find("Maneki")) then
+                pcall(function()
+                    Humanoid:EquipTool(v)
+                    GameEvents.SellPet_RE:FireServer(v)
+                    task.wait()
+                end)
+            end
+        end
+        task.wait()
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, process)
+    if input.KeyCode == Enum.KeyCode.X then
+        for x = 1, 1000 do
+            Remotes.SeedPack.Open.send("Kitsune Chest")
+            Remotes.SeedPack.SpinFinished.send()
+            task.wait()
+        end
+    end
+end)
